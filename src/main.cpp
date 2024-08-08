@@ -26,6 +26,7 @@ int main() {
         });
 
         std::thread client_th([]() {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
             NamedPipe* pipe_client = new NamedPipe("hello", false);
             cout << "Connecting\n";
             pipe_client->Connect();

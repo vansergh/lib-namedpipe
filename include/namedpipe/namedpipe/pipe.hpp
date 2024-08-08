@@ -26,6 +26,9 @@ namespace vsock {
         void Listen();
         NamedPipe* Accept();
         NamedPipe* Accept(std::uint32_t timeout); // miliseconds
+        void Read(void* buf, std::size_t size);
+        void Write(const void* buf, std::size_t size);
+        void Flush();
         void Connect();
         void Close();
 

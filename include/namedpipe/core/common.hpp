@@ -28,7 +28,8 @@ namespace vsock {
 
     using SockAddrUn = sockaddr_un;
     using SockAddrRaw = sockaddr;
-
+    #define VSOCK_SOCKET_ERROR -1
+    
     #endif
 
 }

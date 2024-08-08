@@ -1,5 +1,6 @@
 #include <namedpipe/namedpipe/pipe.hpp>
 #include <namedpipe/core/error.hpp>
+#include "pipe.hpp"
 
 namespace vsock {
 
@@ -42,13 +43,13 @@ namespace vsock {
                 "Method: NamedPipe::Listen()"s,
                 "Message: Is not a server pipe"s
             );
-        }        
+        }
         if (is_opened_) {
             throw RuntimeError(
                 "Method: NamedPipe::Listen()"s,
                 "Message: Already opened"s
             );
-        }        
+        }
         #ifdef _WIN32
         pipe_id_ = CreateNamedPipeA(
             static_cast<LPCSTR>(path_.c_str()),
@@ -75,13 +76,13 @@ namespace vsock {
         unlink(path_.c_str());
         descriptor_.sun_family = AF_UNIX;
         ::strcpy(descriptor_.sun_path, path_.c_str());
-        if (::bind(pipe_id_, reinterpret_cast<SockAddrRaw*>(&descriptor_), sizeof(SockAddrUn)) == VSOCK_INVALID_HANDLE_VALUE) {
+        if (::bind(pipe_id_, reinterpret_cast<SockAddrRaw*>(&descriptor_), sizeof(SockAddrUn)) == VSOCK_SOCKET_ERROR) {
             throw RuntimeError(
                 "Method: NamedPipe::Listen()"s,
                 "Message: Connection failed (::bind)"s
             );
         }
-        if (::listen(pipe_id_, SOMAXCONN) == VSOCK_INVALID_HANDLE_VALUE) {
+        if (::listen(pipe_id_, SOMAXCONN) == VSOCK_SOCKET_ERROR) {
             throw RuntimeError(
                 "Method: NamedPipe::Listen()"s,
                 "Message: Connection failed (::listen)"s
@@ -145,7 +146,7 @@ namespace vsock {
                 "Method: NamedPipe::Accept()"s,
                 "Message: Pipe is not opened"s
             );
-        }        
+        }
         #ifdef _WIN32
         OVERLAPPED overlaped;
         overlaped.Internal = 0;
@@ -208,6 +209,86 @@ namespace vsock {
         is_opened_ = true;
     }
 
+    void NamedPipe::Read(void* buf, std::size_t size) {
+        if (!is_opened_) {
+            throw RuntimeError(
+                "Method: NamedPipe::Read()"s,
+                "Message: Pipe is not opened"s
+            );
+        }
+        #ifdef _WIN32
+        DWORD bytes_readed = 0;
+        bool success = ReadFile(
+            pipe_id_,
+            buf,
+            size,
+            &bytes_readed,
+            NULL
+        );
+        if (!success || bytes_readed == 0 || bytes_readed != size) {
+            if (GetLastError() == ERROR_BROKEN_PIPE) {
+                throw RuntimeError(
+                    "Method: NamedPipe::Read()"s,
+                    "Message: Pipe disconnected"s
+                );
+            }
+            else {
+                throw RuntimeError(
+                    "Method: NamedPipe::Read()"s,
+                    "Message: Read failed"s
+                );
+            }
+        }
+        #else
+        int bytes_readed = ::recv(pipe_id_, buf, size, MSG_WAITALL);
+        if (bytes_readed == VSOCK_SOCKET_ERROR) {
+            throw RuntimeError(
+                "Method: NamedPipe::Read()"s,
+                "Message: Read failed"s
+            );
+        }
+        #endif
+    }
+
+    void NamedPipe::Write(const void* buf, std::size_t size) {
+        if (!is_opened_) {
+            throw RuntimeError(
+                "Method: NamedPipe::Write()"s,
+                "Message: Pipe is not opened"s
+            );
+        }
+        #ifdef _WIN32
+        DWORD bytes_writed;
+        bool success = WriteFile(
+            pipe_id_,
+            buf,
+            size,
+            &bytes_writed,
+            NULL
+        );
+
+        if (!success || size != bytes_writed) {
+            throw RuntimeError(
+                "Method: NamedPipe::Write()"s,
+                "Message: Write failed"s
+            );
+        }
+        #else
+        int bytes_writed = ::send(pipe_id_, buf, size, 0);
+        if (bytes_writed == VSOCK_SOCKET_ERROR || bytes_writed != static_cast<int>(size)) {
+            throw RuntimeError(
+                "Method: NamedPipe::Write()"s,
+                "Message: Write failed"s
+            );
+        }
+        #endif
+    }
+
+    void NamedPipe::Flush() {
+        #ifdef _WIN32
+        FlushFileBuffers(pipe_id_);
+        #endif
+    }
 
     void NamedPipe::Connect() {
         if (is_server_) {
@@ -266,7 +347,7 @@ namespace vsock {
         #else
         descriptor_.sun_family = AF_UNIX;
         ::strcpy(descriptor_.sun_path, path_.c_str());
-        if (::connect(pipe_id_, reinterpret_cast<SockAddrRaw*>(&descriptor_), sizeof(SockAddrUn)) == VSOCK_INVALID_HANDLE_VALUE) {
+        if (::connect(pipe_id_, reinterpret_cast<SockAddrRaw*>(&descriptor_), sizeof(SockAddrUn)) == VSOCK_SOCKET_ERROR) {
             throw RuntimeError(
                 "Method: NamedPipe::Connect()"s,
                 "Message: Could not connect to pipe"s
